@@ -1,15 +1,8 @@
 #include <mpi.h>
 #include <math.h>
 #include <stdio.h>
-//#include "MyMPI.h"
 
 #define MIN(a, b) ((a)<(b)?(a):(b))
-
-
-//#define BLOCK_LOW(id,p,n) ((id)*(n)/(p))
-//#define BLOCK_HIGH(id,p,n) (BLOCK_LOW((id)+1,p,n) - 1)
-//#define BLOCK_SIZE(id,p,n) (BLOCK_LOW((id)+1)-BLOCK_LOW(id))
-//#define BLOCK_OWNER(index,p,n) (((p)*((index)+1)-1)/(n))
 
 int BLOCK_LOW (int id, int p, int n) {
     return id*n/p;
@@ -42,6 +35,11 @@ int main (int argc, char *argv[]) {
     int procZeroSize;
     int prime;
     int size;
+    int primeSize;
+    char *primeMarked;
+    int *primeSet;
+    int primeSetCounter;
+    int primeSetSize;
 
     MPI_Init(&argc, &argv);
 
@@ -63,6 +61,36 @@ int main (int argc, char *argv[]) {
 
     n = atoi(argv[1]);
 
+    primeSize = ceil(sqrt((double)n));
+    primeMarked = (char *)malloc(primeSize + 1);
+    primeMarked[0] = 1; primeMarked[1] = 1;
+
+    for (i = 2; i <= primeSize; ++i) {
+        primeMarked[i] = 0;
+    }
+
+    int primeK = 2;
+
+    do {
+        int base = primeK * primeK;
+        for (i = base; i<= primeSize; i+=primeK) {
+            primeMarked[i] = 1;
+        }
+        while(primeMarked[++primeK]);
+    } while (primeK *primeK <= primeSize);
+    primeSetSize = primeSize;
+    primeSet = (int *)malloc(primeSetSize * sizeof(int));
+    for (i = 0; i <= primeSetSize; ++i) {
+        primeSet[i] = 0;
+    }
+
+    primeSetCounter = 0;
+    for (i = 3; i <= primeSize; ++i) {
+        if (primeMarked[i] == 0){
+            primeSet[primeSetCounter] = i;
+            primeSetCounter++;
+        }
+    }
 
     lowValue = 2 + BLOCK_LOW(id,p,n-1);
     highValue = 2 + BLOCK_HIGH(id,p,n-1);
@@ -70,8 +98,24 @@ int main (int argc, char *argv[]) {
 
     size = BLOCK_SIZE(id,p,n-1);
 
-    procZeroSize = (n-1)/p;
+    if (lowValue % 2 == 0) {
+        if (highValue % 2 == 0) {
+            size = (int) floor ((double) size/2.0);
+            highValue--;
+        } else {
+            size = size/2;
+        }
+        lowValue++;
+    } else {
+        if (highValue % 2 == 0) {
+            size = size/2;
+            highValue--;
+        } else {
+            size = (int) ceil((double)size/2.0);
+        }
+    }
 
+    procZeroSize = (n-1)/p;
 
     if ((2 + procZeroSize) < (int) sqrt((double)n)) {
         if (!id) printf ("Too many processes. Reduce number of process or increase problem size and try again \n");
@@ -94,35 +138,44 @@ int main (int argc, char *argv[]) {
     }
 
     if (!id) {
-        index = 0;
+        first = 0;
     }
-
-    prime = 2;
+    int primeIndex = 0;
+    prime = primeSet[primeIndex];
+    globalCount = 1;
 
     do {
-        if (prime * prime > lowValue) {
-            first = prime * prime - lowValue;
+        if (prime >= lowValue) {
+            first = ((prime - lowValue) / 2) + prime;
+        } else if (prime * prime > lowValue) {
+            first = (prime * prime - lowValue) / 2;
         }
         else {
-            if (!(lowValue % prime)) {
+            if (lowValue % prime == 0) {
                 first = 0;
             }
             else {
-                first = prime - (lowValue % prime);
+                first = 1;
+                while ((lowValue + (2 * first)) % prime != 0) {
+                    first++;
+                }
             }
         }
         for (i = first; i < size; i += prime) {
             marked[i] = 1;
         }
 
-        if (!id) {
-            while (marked[++index]);
-            prime = index + 2;
+        prime = primeSet[++primeIndex];
+        if (prime == 0) {
+            break;
         }
-        MPI_Bcast (&prime, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
     } while (prime * prime <= n);
 
-    count = 0;
+    if (!id)
+        count = 1;
+    else
+        count = 0;
     for (i = 0; i < size; i++) {
         if (!marked[i]) {
             count++;

@@ -1,7 +1,6 @@
 #include <mpi.h>
 #include <math.h>
 #include <stdio.h>
-//#include "MyMPI.h"
 
 #define MIN(a, b) ((a)<(b)?(a):(b))
 
@@ -70,8 +69,24 @@ int main (int argc, char *argv[]) {
 
     size = BLOCK_SIZE(id,p,n-1);
 
-    procZeroSize = (n-1)/p;
+    if (lowValue % 2 == 0) {
+        if (highValue % 2 == 0) {
+            size = (int) floor ((double) size/2.0);
+            highValue--;
+        } else {
+            size = size/2;
+        }
+        lowValue++;
+    } else {
+        if (highValue % 2 == 0) {
+            size = size/2;
+            highValue--;
+        } else {
+            size = (int) ceil((double)size/2.0);
+        }
+    }
 
+    procZeroSize = (n-1)/p;
 
     if ((2 + procZeroSize) < (int) sqrt((double)n)) {
         if (!id) printf ("Too many processes. Reduce number of process or increase problem size and try again \n");
@@ -94,21 +109,27 @@ int main (int argc, char *argv[]) {
     }
 
     if (!id) {
-        index = 0;
+        first = 0;
     }
 
-    prime = 2;
+    prime = 3;
+    index = 0;
 
     do {
-        if (prime * prime > lowValue) {
-            first = prime * prime - lowValue;
+        if (prime >= lowValue) {
+            first = ((prime - lowValue) / 2) + prime;
+        } else if (prime * prime > lowValue) {
+            first = (prime * prime - lowValue) / 2;
         }
         else {
             if (!(lowValue % prime)) {
                 first = 0;
             }
             else {
-                first = prime - (lowValue % prime);
+                first = 1;
+                while ((lowValue + (2 * first)) % prime != 0) {
+                    first++;
+                }
             }
         }
         for (i = first; i < size; i += prime) {
@@ -117,12 +138,15 @@ int main (int argc, char *argv[]) {
 
         if (!id) {
             while (marked[++index]);
-            prime = index + 2;
+            prime = (3 + (index * 2));
         }
         MPI_Bcast (&prime, 1, MPI_INT, 0, MPI_COMM_WORLD);
     } while (prime * prime <= n);
 
-    count = 0;
+    if (!id)
+        count = 1;
+    else
+        count = 0;
     for (i = 0; i < size; i++) {
         if (!marked[i]) {
             count++;

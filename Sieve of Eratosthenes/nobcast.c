@@ -1,7 +1,6 @@
 #include <mpi.h>
 #include <math.h>
 #include <stdio.h>
-//#include "MyMPI.h"
 
 #define MIN(a, b) ((a)<(b)?(a):(b))
 
@@ -42,6 +41,12 @@ int main (int argc, char *argv[]) {
     int procZeroSize;
     int prime;
     int size;
+    //variables for optimization
+    int primeSize;
+    char *primeMarked;
+    int *primeSet;
+    int primeSetCounter;
+    int primeSetSize;
 
     MPI_Init(&argc, &argv);
 
@@ -51,7 +56,6 @@ int main (int argc, char *argv[]) {
 
     MPI_Comm_rank (MPI_COMM_WORLD, &id);
     MPI_Comm_size (MPI_COMM_WORLD, &p);
-
 
     if (argc != 2) {
         if (!id) {
@@ -63,15 +67,47 @@ int main (int argc, char *argv[]) {
 
     n = atoi(argv[1]);
 
+    //add code for optimization.
+    primeSize = ceil(sqrt((double)n));
+    primeMarked = (char *)malloc(primeSize);
+    primeMarked[0] = 1; primeMarked[1] = 1;
 
+    for (i = 2; i <= primeSize; i++) {
+        primeMarked[i] = 0;
+    }
+
+    int primeK = 2;
+
+    do {
+        int base = primeK * primeK;
+        for (i = base; i< primeSize; i+=primeK) {
+            primeMarked[i] = 1;
+        }
+        while(primeMarked[++primeK]);
+    } while (primeK *primeK <= primeSize);
+    primeSetSize = primeSize;
+    primeSet = (int *)malloc(primeSetSize * sizeof(int));
+    for (i = 0; i < primeSetSize; i++) {
+        primeSet[i] = 0;
+    }
+
+    primeSetCounter = 0;
+    for (i = 3; i <= primeSize; i++) {
+        if (primeMarked[i] == 0){
+            primeSet[primeSetCounter] = i;
+            primeSetCounter++;
+        }
+    }
+
+    //end first segment
+    //printf("Reached Here \n");
     lowValue = 2 + BLOCK_LOW(id,p,n-1);
     highValue = 2 + BLOCK_HIGH(id,p,n-1);
 
 
     size = BLOCK_SIZE(id,p,n-1);
-
     procZeroSize = (n-1)/p;
-
+//printf("Reached Here \n");
 
     if ((2 + procZeroSize) < (int) sqrt((double)n)) {
         if (!id) printf ("Too many processes. Reduce number of process or increase problem size and try again \n");
@@ -79,9 +115,8 @@ int main (int argc, char *argv[]) {
         exit(1);
     }
 
-
-    marked = (char *) malloc (size);
-
+    marked = (char*)malloc(size);
+    //printf("Reached Here \n");
     elapsedTime = MPI_Wtime();
     if (marked == NULL) {
         printf("Memory allocation failed\n");
@@ -96,9 +131,10 @@ int main (int argc, char *argv[]) {
     if (!id) {
         index = 0;
     }
-
+        //printf("Reached Here \n");
     prime = 2;
 
+    int primeIndex = 0;
     do {
         if (prime * prime > lowValue) {
             first = prime * prime - lowValue;
@@ -119,8 +155,10 @@ int main (int argc, char *argv[]) {
             while (marked[++index]);
             prime = index + 2;
         }
-        MPI_Bcast (&prime, 1, MPI_INT, 0, MPI_COMM_WORLD);
-    } while (prime * prime <= n);
+        //printf("Reached Here \n");
+        prime = primeSet[primeIndex];
+        primeIndex++;
+    } while (prime * prime <= n && primeSet[primeIndex-1] != 0);
 
     count = 0;
     for (i = 0; i < size; i++) {
